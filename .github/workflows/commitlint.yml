@@ -1,0 +1,21 @@
+name: 🚨 Lint Commits
+
+on: [push, pull_request]
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: pnpm install
+
+      - name: Run commitlint
+        run: |
+          echo "Checking commit messages..."
+          npx commitlint --from=HEAD~10 --to=HEAD --verbose
