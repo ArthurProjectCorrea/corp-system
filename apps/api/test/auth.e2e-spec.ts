@@ -5,18 +5,29 @@ import { AppModule } from '../src/app.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { User } from '../src/users/user.entity';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm'; // Import DataSource
+import { UserDepartment } from '../src/user-departments/user-department.entity';
 import { CreateUserDto } from '../src/users/dto/create-user.dto';
+
+// Define a DTO for login request
+class LoginDto {
+  username: string;
+  password: string; // Login uses plain password
+}
 
 describe('AuthController (e2e)', () => {
   let app: INestApplication;
   let userRepository: Repository<User>;
+  let userDepartmentRepository: Repository<UserDepartment>;
+  let dataSource: DataSource;
   let originalConfigService: ConfigService;
 
   const testUserCredentials = {
+    username: 'authtestuser', // Adicionado username
     name: 'Auth Test User',
     email: 'auth-test@example.com',
-    password: 'password123',
+    password: 'password123', // Plain password for login
+    password_hash: 'password123', // Hashed password for user creation DTO
   };
 
   // Helper to get values from .env, prioritizing actual env vars
@@ -75,32 +86,37 @@ describe('AuthController (e2e)', () => {
     await app.init();
 
     userRepository = moduleFixture.get<Repository<User>>(getRepositoryToken(User));
+    userDepartmentRepository = moduleFixture.get<Repository<UserDepartment>>(getRepositoryToken(UserDepartment));
+    dataSource = moduleFixture.get<DataSource>(DataSource);
   });
 
   beforeEach(async () => {
-    await userRepository.clear();
-    // Create user through the API endpoint to ensure all hooks/logic run, including password hashing
+    // Usar TRUNCATE CASCADE para limpar todas as tabelas relacionadas
+    await dataSource.query('TRUNCATE TABLE "user_departments", "users", "departments" RESTART IDENTITY CASCADE;');
+
     await request(app.getHttpServer())
         .post('/users')
         .send({
+        username: testUserCredentials.username, // Inclui username na criação
         name: testUserCredentials.name,
         email: testUserCredentials.email,
-        password: testUserCredentials.password,
+        password_hash: testUserCredentials.password_hash, // Inclui password_hash na criação
         } as CreateUserDto)
         .expect(HttpStatus.CREATED); // Ensure user is created successfully for auth tests
   });
 
 
   afterAll(async () => {
-    await userRepository.clear(); // Clean up after all tests
+    // Limpar também no afterAll para garantir
+    await dataSource.query('TRUNCATE TABLE "user_departments", "users", "departments" RESTART IDENTITY CASCADE;');
     await app.close();
   });
 
   describe('/auth/login (POST)', () => {
     it('should login an existing user and return a JWT', async () => {
-      const loginDto = {
-        email: testUserCredentials.email,
-        password: testUserCredentials.password,
+      const loginDto: LoginDto = {
+        username: testUserCredentials.username, // Usa username para login
+        password: testUserCredentials.password, // Use plain password for login
       };
 
       return request(app.getHttpServer())
@@ -115,9 +131,9 @@ describe('AuthController (e2e)', () => {
     });
 
     it('should fail to login with incorrect password (401)', async () => {
-      const loginDto = {
-        email: testUserCredentials.email,
-        password: 'wrongpassword',
+      const loginDto: LoginDto = {
+        username: testUserCredentials.username, // Usa username para login
+        password: 'wrongpassword', // Use plain password for login
       };
 
       return request(app.getHttpServer())
@@ -129,10 +145,10 @@ describe('AuthController (e2e)', () => {
         });
     });
 
-    it('should fail to login with non-existent email (401)', async () => {
-      const loginDto = {
-        email: 'nonexistent@example.com',
-        password: testUserCredentials.password,
+    it('should fail to login with non-existent username (401)', async () => {
+      const loginDto: LoginDto = {
+        username: 'nonexistentuser', // Usa username para login
+        password: testUserCredentials.password, // Use plain password for login
       };
 
       return request(app.getHttpServer())
@@ -145,12 +161,12 @@ describe('AuthController (e2e)', () => {
     });
 
      it('should fail with validation errors for invalid login DTO (400)', async () => {
-      const invalidLoginDto = { email: 'not-an-email' }; // Missing password
+      const invalidLoginDto = { username: 'testuser' }; // Missing password
       return request(app.getHttpServer())
         .post('/auth/login')
         .send(invalidLoginDto)
         .expect(HttpStatus.UNAUTHORIZED) // Guard runs before DTO validation for missing strategy fields
-        .then((res) => {
+         .then((res) => {
           // If passport-local throws a generic UnauthorizedException due to missing password field
           expect(res.body.message).toEqual('Unauthorized');
         });
@@ -163,8 +179,11 @@ describe('AuthController (e2e)', () => {
     beforeEach(async () => {
       // Login to get a token
       const loginRes = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email: testUserCredentials.email, password: testUserCredentials.password });
+        .post('/auth/login') // Usa o endpoint de login atualizado
+        .send({
+          username: testUserCredentials.username,
+          password: testUserCredentials.password,
+        });
       authToken = loginRes.body.access_token;
     });
 
@@ -176,7 +195,7 @@ describe('AuthController (e2e)', () => {
         .then((res) => {
           expect(res.body).toBeDefined();
           expect(res.body.userId).toBeDefined();
-          expect(res.body.email).toEqual(testUserCredentials.email);
+          expect(res.body.username).toEqual(testUserCredentials.username); // Verifica username no payload do perfil
           expect(res.body.name).toEqual(testUserCredentials.name);
         });
     });

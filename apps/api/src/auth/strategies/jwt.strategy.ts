@@ -2,7 +2,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UsersService } from '../../users/users.service';
+import { UsersService } from '../../users/users.service'; // Import UsersService if needed for user lookup
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -21,9 +21,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string; name: string }) {
-    // O payload é o que foi assinado no token JWT (id, email, nome)
+  async validate(payload: { sub: string; username: string; name: string }) {
+    // O payload é o que foi assinado no token JWT (id, username, nome)
     // Você pode adicionar mais validações aqui, como verificar se o usuário ainda existe
-    return { userId: payload.sub, email: payload.email, name: payload.name };
+    return { userId: payload.sub, username: payload.username, name: payload.name }; // Retorna username
   }
 }

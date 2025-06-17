@@ -5,6 +5,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
+import { Department } from './departments/department.entity';
+import { UserDepartment } from './user-departments/user-department.entity';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { AuthModule } from './auth/auth.module';
       }),
     }),
     UsersModule,
+    TypeOrmModule.forFeature([Department, UserDepartment]), // Adicione isso
     AuthModule,
   ],
   controllers: [AppController],

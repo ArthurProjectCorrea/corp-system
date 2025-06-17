@@ -3,6 +3,10 @@ import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
 export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
+  username: string;
+
+  @IsString()
+  @IsNotEmpty()
   name: string;
 
   @IsEmail()
@@ -11,6 +15,6 @@ export class CreateUserDto {
 
   @IsString()
   @IsNotEmpty()
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
-  password: string;
+  @MinLength(6, { message: 'Password hash must be at least 6 characters long' })
+  password_hash: string;
 }
