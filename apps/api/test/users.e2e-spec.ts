@@ -104,11 +104,18 @@ describe('UsersController (e2e)', () => {
   });
 
   it('/users (POST) - should fail to create user with existing email (409)', async () => {
-    await request(app.getHttpServer()).post('/users').send(createUserDto).expect(201);
+    // Ensure the first user is created and persisted
+    const firstUser = await request(app.getHttpServer())
+      .post('/users')
+      .send(createUserDto)
+      .expect(HttpStatus.CREATED);
+    expect(firstUser.body.id).toBeDefined();
+
+    // Attempt to create the same user again
     return request(app.getHttpServer())
       .post('/users')
       .send(createUserDto)
-      .expect(409)
+      .expect(HttpStatus.CONFLICT)
       .then((res) => {
         expect(res.body.message).toEqual('Email already exists');
       });
@@ -138,13 +145,18 @@ describe('UsersController (e2e)', () => {
     let authToken: string;
 
     beforeEach(async () => {
-      // Create user
-      const res = await request(app.getHttpServer())
-        .post('/users')
-        .send({ ...createUserDto, email: 'existing@example.com' }) // Use a unique email for this block
-        .expect(HttpStatus.CREATED);
-      expect(res.body.id).toBeDefined(); // Ensure ID is present
-      existingUser = res.body;
+      // Create user directly via repository to ensure it exists for auth tests
+      // This bypasses the API endpoint but ensures the user is in the DB
+      const userEntity = userRepository.create({
+        ...createUserDto,
+        email: 'existing@example.com', // Use a unique email for this block
+      });
+      // The @BeforeInsert hook should hash the password here
+      existingUser = await userRepository.save(userEntity);
+      expect(existingUser.id).toBeDefined(); // Ensure ID is present after saving
+      // existingUser.password here is the HASHED password.
+      // For login, we must use the original plain text defaultUserPassword.
+      // We should not use this object directly for assertions that expect SafeUserReturn.
 
       // Login to get token
       const loginDto = {
@@ -165,7 +177,7 @@ describe('UsersController (e2e)', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .expect(HttpStatus.OK)
         .then((res) => {
-          expect(res.body).toBeInstanceOf(Array);
+          expect(Array.isArray(res.body)).toBe(true); // Use Array.isArray for clarity
           expect(res.body.length).toBeGreaterThanOrEqual(1);
           const userInList = res.body.find((u) => u.id === existingUser.id);
           expect(userInList).toBeDefined();

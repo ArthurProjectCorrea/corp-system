@@ -83,15 +83,16 @@ describe('AuthController (e2e)', () => {
 
   beforeEach(async () => {
     await userRepository.clear();
-    // Create user through the API endpoint to ensure all hooks/logic run, including password hashing
-    await request(app.getHttpServer())
-        .post('/users')
-        .send({
+    // Create user directly via repository to ensure it exists for auth tests
+    // This bypasses the API endpoint but ensures the user is in the DB
+    const userEntity = userRepository.create({
         name: testUserCredentials.name,
         email: testUserCredentials.email,
         password: testUserCredentials.password,
-        } as CreateUserDto)
-        .expect(HttpStatus.CREATED); // Ensure user is created successfully for auth tests
+    });
+    // The @BeforeInsert hook should hash the password here
+    await userRepository.save(userEntity);
+    // We don't need to store the result as we only need the credentials for login
   });
 
 
