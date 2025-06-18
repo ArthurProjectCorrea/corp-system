@@ -80,12 +80,12 @@ describe('UsersController (e2e)', () => {
     userRepository = moduleFixture.get<Repository<User>>(getRepositoryToken(User));
   });
 
-  beforeEach(async () => {
-    // Clear users table before each test
-    await userRepository.clear();
-  });
-
   afterAll(async () => {
+    // Opcional: limpar o repositório após todos os testes neste arquivo, se necessário.
+    // Isso pode ser útil se outros arquivos de teste dependerem de um banco de dados limpo.
+    if (userRepository) { // Garante que userRepository foi inicializado
+      await userRepository.clear();
+    }
     await app.close();
   });
 
@@ -95,6 +95,11 @@ describe('UsersController (e2e)', () => {
     email: 'test@example.com',
     password: defaultUserPassword,
   };
+
+  // Limpar antes dos testes de criação de usuário para garantir isolamento
+  beforeEach(async () => {
+    await userRepository.clear();
+  });
 
   it('/users (POST) - should create a new user', async () => {
     return request(app.getHttpServer())
@@ -154,6 +159,10 @@ describe('UsersController (e2e)', () => {
     let authToken: string;
 
     beforeEach(async () => {
+      // Limpar o repositório antes de cada teste neste bloco aninhado
+      await userRepository.clear();
+
+      // This beforeEach runs before each 'it' test within this 'describe' block
       // Create user directly via repository to ensure it exists for auth tests
       // This bypasses the API endpoint but ensures the user is in the DB
       const userEntity = userRepository.create({
