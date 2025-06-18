@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -135,20 +135,35 @@ describe('UsersController (e2e)', () => {
 
   describe('with an existing user', () => {
     let existingUser: User;
+    let authToken: string;
 
     beforeEach(async () => {
+      // Create user
       const res = await request(app.getHttpServer())
         .post('/users')
         .send({ ...createUserDto, email: 'existing@example.com' }) // Use a unique email for this block
-        .expect(201); // Ensure user creation was successful
+        .expect(HttpStatus.CREATED);
       expect(res.body.id).toBeDefined(); // Ensure ID is present
       existingUser = res.body;
+
+      // Login to get token
+      const loginDto = {
+        email: 'existing@example.com',
+        password: defaultUserPassword,
+      };
+      const loginRes = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send(loginDto)
+        .expect(HttpStatus.OK);
+      authToken = loginRes.body.access_token;
+      expect(authToken).toBeDefined();
     });
 
     it('/users (GET) - should get all users', async () => {
       return request(app.getHttpServer())
         .get('/users')
-        .expect(200)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(HttpStatus.OK)
         .then((res) => {
           expect(res.body).toBeInstanceOf(Array);
           expect(res.body.length).toBeGreaterThanOrEqual(1);
@@ -162,7 +177,8 @@ describe('UsersController (e2e)', () => {
     it('/users/:id (GET) - should get a specific user by id', async () => {
       return request(app.getHttpServer())
         .get(`/users/${existingUser.id}`)
-        .expect(200)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(HttpStatus.OK)
         .then((res) => {
           expect(res.body.id).toEqual(existingUser.id);
           expect(res.body.email).toEqual(existingUser.email);
@@ -174,17 +190,39 @@ describe('UsersController (e2e)', () => {
       const updateDto = { name: 'Updated Test User' };
       return request(app.getHttpServer())
         .patch(`/users/${existingUser.id}`)
+        .set('Authorization', `Bearer ${authToken}`)
         .send(updateDto)
-        .expect(200)
+        .expect(HttpStatus.OK)
         .then((res) => {
           expect(res.body.name).toEqual(updateDto.name);
           expect(res.body.id).toEqual(existingUser.id);
         });
     });
 
+    it('/users/:id (PATCH) - should return 404 for non-existent user', async () => {
+      const nonExistentUserId = '00000000-0000-0000-0000-000000000000'; // A non-existent UUID
+      const updateDto = { name: 'Updated Test User' };
+      return request(app.getHttpServer())
+        .patch(`/users/${nonExistentUserId}`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .send(updateDto)
+        .expect(HttpStatus.NOT_FOUND);
+    });
+
     it('/users/:id (DELETE) - should delete a user', async () => {
-      await request(app.getHttpServer()).delete(`/users/${existingUser.id}`).expect(200);
-      return request(app.getHttpServer()).get(`/users/${existingUser.id}`).expect(404);
+      await request(app.getHttpServer())
+        .delete(`/users/${existingUser.id}`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(HttpStatus.OK);
+      return request(app.getHttpServer()).get(`/users/${existingUser.id}`).set('Authorization', `Bearer ${authToken}`).expect(HttpStatus.NOT_FOUND);
+    });
+
+    it('/users/:id (DELETE) - should return 404 for non-existent user', async () => {
+      const nonExistentUserId = '00000000-0000-0000-0000-000000000000'; // A non-existent UUID
+      return request(app.getHttpServer())
+        .delete(`/users/${nonExistentUserId}`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(HttpStatus.NOT_FOUND);
     });
   });
 });

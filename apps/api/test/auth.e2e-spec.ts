@@ -54,6 +54,10 @@ describe('AuthController (e2e)', () => {
               return getEnvVar('JWT_SECRET', 'test_secret_key_e2e'); // Use a consistent test secret
             case 'JWT_EXPIRATION_TIME':
               return getEnvVar('JWT_EXPIRATION_TIME', '60s'); // Short expiration for testing
+            case 'JWT_REFRESH_SECRET':
+              return getEnvVar('JWT_REFRESH_SECRET', 'test_refresh_secret_key_e2e'); // Consistent test refresh secret
+            case 'JWT_REFRESH_EXPIRATION_TIME':
+              return getEnvVar('JWT_REFRESH_EXPIRATION_TIME', '120s'); // Short refresh expiration for testing
             case 'PORT':
                return parseInt(getEnvVar('PORT', '3001'), 10);
             default:
@@ -144,15 +148,35 @@ describe('AuthController (e2e)', () => {
         });
     });
 
-     it('should fail with validation errors for invalid login DTO (400)', async () => {
-      const invalidLoginDto = { email: 'not-an-email' }; // Missing password
+    it('should fail with DTO validation error if password field is missing (400)', async () => {
+      // Send a valid email but omit the password field
+      const loginDtoMissingPassword = { email: testUserCredentials.email };
       return request(app.getHttpServer())
         .post('/auth/login')
-        .send(invalidLoginDto)
-        .expect(HttpStatus.UNAUTHORIZED) // Guard runs before DTO validation for missing strategy fields
+        .send(loginDtoMissingPassword)
+        .expect(HttpStatus.BAD_REQUEST) // ValidationPipe now catches missing password
         .then((res) => {
-          // If passport-local throws a generic UnauthorizedException due to missing password field
-          expect(res.body.message).toEqual('Unauthorized');
+          expect(res.body.message).toBeInstanceOf(Array);
+          expect(res.body.message).toEqual(
+            expect.arrayContaining(['password should not be empty']),
+          );
+        });
+    });
+
+    it('should fail with DTO validation errors for malformed login data (400)', async () => {
+      const malformedLoginDto = {
+        email: 'not-an-email-format', // Malformed email
+        password: '', // Empty password (violates @IsNotEmpty)
+      };
+      return request(app.getHttpServer())
+        .post('/auth/login')
+        .send(malformedLoginDto)
+        .expect(HttpStatus.BAD_REQUEST) // ValidationPipe should catch these DTO errors
+        .then((res) => {
+          expect(res.body.message).toBeInstanceOf(Array);
+          expect(res.body.message).toEqual(
+            expect.arrayContaining(['email must be an email', 'password should not be empty']),
+          );
         });
     });
   });
@@ -190,6 +214,85 @@ describe('AuthController (e2e)', () => {
         .get('/auth/profile')
         .set('Authorization', 'Bearer invalidtoken123')
         .expect(HttpStatus.UNAUTHORIZED);
+    });
+  });
+
+  describe('/auth/logout (POST)', () => {
+    let authToken: string;
+
+    beforeEach(async () => {
+      // Login to get a token
+      const loginRes = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: testUserCredentials.email, password: testUserCredentials.password })
+        .expect(HttpStatus.OK);
+      authToken = loginRes.body.access_token;
+      expect(authToken).toBeDefined();
+    });
+
+    it('should logout a user with a valid JWT and return success message (200)', async () => {
+      return request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(HttpStatus.OK)
+        .then((res) => {
+          expect(res.body).toBeDefined();
+          expect(res.body.message).toEqual('Logout successful. Client should discard the token.');
+        });
+    });
+
+    it('should fail to logout without JWT (401)', async () => {
+      return request(app.getHttpServer()).post('/auth/logout').expect(HttpStatus.UNAUTHORIZED);
+    });
+
+    it('should fail to logout with an invalid JWT (401)', async () => {
+      return request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Authorization', 'Bearer invalidtoken123')
+        .expect(HttpStatus.UNAUTHORIZED);
+    });
+  });
+
+  describe('/auth/refresh (POST)', () => {
+    let validRefreshToken: string;
+
+    beforeEach(async () => {
+      // Login to get a valid refresh token
+      const loginRes = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: testUserCredentials.email, password: testUserCredentials.password })
+        .expect(HttpStatus.OK);
+      validRefreshToken = loginRes.body.refresh_token;
+      expect(validRefreshToken).toBeDefined();
+    });
+
+    it('should refresh token with a valid refresh_token', async () => {
+      return request(app.getHttpServer())
+        .post('/auth/refresh')
+        .send({ refresh_token: validRefreshToken })
+        .expect(HttpStatus.OK)
+        .then((res) => {
+          expect(res.body.access_token).toBeDefined();
+          expect(typeof res.body.access_token).toBe('string');
+        });
+    });
+
+    it('should fail to refresh with an invalid (malformed) refresh_token (400)', async () => {
+      return request(app.getHttpServer())
+        .post('/auth/refresh')
+        .send({ refresh_token: 'not-a-jwt' })
+        .expect(HttpStatus.BAD_REQUEST) // DTO validation should catch this
+        .then((res) => {
+          expect(res.body.message).toContain('refresh_token must be a jwt string');
+        });
+    });
+
+    it('should fail to refresh with a non-existent or expired refresh_token (401)', async () => {
+      const nonExistentOrExpiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjY2M0YjQyMi1jYjJjLTQxMWEtYTAzNC0yZDE4YjYwZDY5ZjYiLCJpYXQiOjE2NzgwMzY4MDAsImV4cCI6MTY3ODY0MTYwMH0.completelyrandomsignature';
+      return request(app.getHttpServer())
+        .post('/auth/refresh')
+        .send({ refresh_token: nonExistentOrExpiredToken })
+        .expect(HttpStatus.UNAUTHORIZED); // AuthService should handle this
     });
   });
 });
