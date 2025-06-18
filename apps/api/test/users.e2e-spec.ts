@@ -48,6 +48,15 @@ describe('UsersController (e2e)', () => {
                 return getEnvVar('TEST_DB_DATABASE', 'database_test');
               case 'NODE_ENV':
                 return 'test'; // Ensures synchronize: true for TypeORM
+              // Adicionar configurações JWT para consistência e funcionamento correto
+              case 'JWT_SECRET':
+                return getEnvVar('JWT_SECRET', 'test_users_e2e_secret_key'); // Usar um segredo de teste distinto ou o mesmo do auth
+              case 'JWT_EXPIRATION_TIME':
+                return getEnvVar('JWT_EXPIRATION_TIME', '30s'); // Expiração curta para testes
+              case 'JWT_REFRESH_SECRET':
+                return getEnvVar('JWT_REFRESH_SECRET', 'test_users_e2e_refresh_secret_key');
+              case 'JWT_REFRESH_EXPIRATION_TIME':
+                return getEnvVar('JWT_REFRESH_EXPIRATION_TIME', '60s');
               case 'PORT':
                  return parseInt(getEnvVar('PORT', '3001'), 10);
               default:
